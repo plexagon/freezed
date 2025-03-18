@@ -116,7 +116,12 @@ class DeepCloneableProperty {
         genericParameters: GenericsParameterTemplate(
           (parameter.type as InterfaceType)
               .typeArguments
-              .map((e) => e.getDisplayString())
+              .map(
+                (type) => resolveFullTypeStringFrom(
+                  type.element!.library!,
+                  type,
+                ),
+              )
               .toList(),
         ),
       );
@@ -394,7 +399,8 @@ class ImplementsAnnotation {
     ).annotationsOf(constructor, throwOnUnresolved: false)) {
       final stringType = meta.getField('stringType');
       if (stringType?.isNull == false) {
-        yield ImplementsAnnotation(type: stringType!.toStringValue()!);
+        final result = _extractTypeFromGenericAnnotation(stringType!.toStringValue()!, constructor);
+        yield ImplementsAnnotation(type: result);
       } else {
         yield ImplementsAnnotation(
           type: resolveFullTypeStringFrom(
@@ -417,19 +423,8 @@ class WithAnnotation {
   ) sync* {
     for (final metadata in constructor.metadata) {
       if (!metadata.isWith) continue;
-      final object = metadata.computeConstantValue()!;
-
-      final stringType = object.getField('stringType');
-      if (stringType?.isNull == false) {
-        yield WithAnnotation(type: stringType!.toStringValue()!);
-      } else {
-        yield WithAnnotation(
-          type: resolveFullTypeStringFrom(
-            constructor.library,
-            (object.type! as InterfaceType).typeArguments.single,
-          ),
-        );
-      }
+      final result = _extractTypeFromGenericAnnotation(metadata.toSource(), constructor);
+      yield WithAnnotation(type: result);
     }
   }
 
@@ -1246,4 +1241,20 @@ extension on DartObject {
     if (field == null || field.isNull) return orElse();
     return decode(field);
   }
+}
+
+String _extractTypeFromGenericAnnotation(
+  String annotation,
+  ConstructorElement element,
+) {
+  final reg = RegExp(r'.*?<(.+)>');
+  final match = reg.firstMatch(annotation)?.group(1);
+  if (match == null) {
+    throw InvalidGenerationSourceError(
+      'Annotation does not properly specify type: $annotation',
+      element: element,
+    );
+  }
+
+  return match;
 }

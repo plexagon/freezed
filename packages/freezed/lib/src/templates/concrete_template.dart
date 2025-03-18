@@ -31,6 +31,7 @@ class Concrete {
   final Class data;
   final Library globalData;
   final CopyWith? copyWith;
+  String? additionaInClass;
 
   late final bool _hasUnionKeyProperty =
       (data.options.toJson || data.options.fromJson) &&
@@ -56,6 +57,7 @@ class ${constructor.redirectedName}${data.genericsDefinitionTemplate} $_concrete
 $_properties
 
 ${copyWith?.copyWithGetter(needsCast: false) ?? ''}
+${additionaInClass ?? ''}
 ${methods(data, globalData, properties: constructor.properties, name: constructor.redirectedName, escapedName: constructor.escapedName, source: Source.syntheticClass)}
 }
 
