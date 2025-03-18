@@ -17,6 +17,7 @@ class Abstract {
   final CopyWith? copyWith;
   final List<Property> commonProperties;
   final Library globalData;
+  String? additionaInMixin;
 
   @override
   String toString() {
@@ -47,6 +48,7 @@ mixin _\$${data.name.public}${data.genericsDefinitionTemplate}$interfaces {
 $abstractProperties
 ${copyWith?.copyWithGetter(needsCast: true) ?? ''}
 ${methods(data, globalData, properties: commonProperties, name: data.name, escapedName: data.escapedName, source: Source.mixin)}
+${additionaInMixin ?? ''}
 }
 
 ${copyWith?.commonInterface ?? ''}

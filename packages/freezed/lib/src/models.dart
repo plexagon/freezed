@@ -121,8 +121,20 @@ class DeepCloneableProperty {
         nullable: parameter.type.isNullable,
         typeName: typeElement.name3!,
         genericParameters: GenericsParameterTemplate(
-          (parameter.type as InterfaceType).typeArguments
-              .map((e) => e.getDisplayString())
+          // [plexagon] Resolve each type argument instead of printing
+          // it, so an aliased argument keeps its written name (see
+          // `resolveFullTypeStringFrom`). The old element model exposed
+          // `.element` on any DartType; the new one only reaches it
+          // through the concrete kind, and a non-interface argument has
+          // no library to resolve against — printing it is what upstream
+          // did for every argument anyway.
+          (parameter.type as InterfaceType)
+              .typeArguments
+              .map(
+                (type) => type is InterfaceType
+                    ? resolveFullTypeStringFrom(type.element3.library2, type)
+                    : type.getDisplayString(),
+              )
               .toList(),
         ),
       );
@@ -432,7 +444,8 @@ class ImplementsAnnotation {
     ).annotationsOf(constructor, throwOnUnresolved: false)) {
       final stringType = meta.getField('stringType');
       if (stringType?.isNull == false) {
-        yield ImplementsAnnotation(type: stringType!.toStringValue()!);
+        final result = _extractTypeFromGenericAnnotation(stringType!.toStringValue()!, constructor);
+        yield ImplementsAnnotation(type: result);
       } else {
         yield ImplementsAnnotation(
           type: resolveFullTypeStringFrom(
@@ -455,19 +468,14 @@ class WithAnnotation {
   ) sync* {
     for (final metadata in constructor.metadata2.annotations) {
       if (!metadata.isWith) continue;
-      final object = metadata.computeConstantValue()!;
-
-      final stringType = object.getField('stringType');
-      if (stringType?.isNull == false) {
-        yield WithAnnotation(type: stringType!.toStringValue()!);
-      } else {
-        yield WithAnnotation(
-          type: resolveFullTypeStringFrom(
-            constructor.library2,
-            (object.type! as InterfaceType).typeArguments.single,
-          ),
-        );
-      }
+      // [plexagon] Take the type argument from the SOURCE of the
+      // annotation rather than from its constant value. Resolving the
+      // constant loses aliases exactly like the case documented in
+      // `resolveFullTypeStringFrom`, and the text the author wrote is
+      // already valid in the generated file, which shares the imports.
+      final result =
+          _extractTypeFromGenericAnnotation(metadata.toSource(), constructor);
+      yield WithAnnotation(type: result);
     }
   }
 
@@ -1383,4 +1391,20 @@ extension on DartObject {
     if (field == null || field.isNull) return orElse();
     return decode(field);
   }
+}
+
+String _extractTypeFromGenericAnnotation(
+  String annotation,
+  ConstructorElement2 element,
+) {
+  final reg = RegExp(r'.*?<(.+)>');
+  final match = reg.firstMatch(annotation)?.group(1);
+  if (match == null) {
+    throw InvalidGenerationSourceError(
+      'Annotation does not properly specify type: $annotation',
+      element: element,
+    );
+  }
+
+  return match;
 }

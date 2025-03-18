@@ -24,71 +24,71 @@ extension DartTypeX on DartType {
   }
 }
 
-/// Returns the [Element2] for a given [DartType]
-///
-/// this is usually type.element, except if it is a typedef then it is
-/// type.alias.element
-Element2? _getElementForType(DartType type) {
-  if (type is InterfaceType) {
-    return type.element3;
-  }
-  if (type is FunctionType) {
-    return type.alias?.element2;
-  }
-  return null;
-}
-
 /// Renders a type based on its string + potential import alias
+///
+/// PLEXAGON PATCH — reworked so that ANY type alias keeps the name the author
+/// wrote, not just a `typedef` over a function type. Upstream special
+/// cases `FunctionType` only, so a plain alias — `typedef LayerTimeFrame
+/// = BaseLayer_TimeFrame`, as generated for protobuf nested messages —
+/// is expanded by `getDisplayString()` to the underlying name, which is
+/// then emitted into generated code where it may not even be imported.
+/// Verified 2026-08-16: reverting this makes plx_editor-dart generate
+/// code with 12 analyzer errors.
 String resolveFullTypeStringFrom(LibraryElement2 originLibrary, DartType type) {
+  String buildType(String name, List<DartType> typeArguments) {
+    if (typeArguments.isNotEmpty) {
+      name += '<${typeArguments.map(
+            (t) => resolveFullTypeStringFrom(
+              originLibrary,
+              t,
+            ),
+          ).join(', ')}>';
+    }
+    if (type.nullabilitySuffix == NullabilitySuffix.question) {
+      name += '?';
+    }
+
+    return name;
+  }
+
+  final String displayType;
+  final int? libraryId;
+  final alias = type.alias;
+  if (alias != null) {
+    final element = alias.element2;
+    displayType = buildType(element.name3!, alias.typeArguments);
+    libraryId = element.library2.id;
+  } else if (type is InterfaceType) {
+    final element = type.element3;
+    final typeArguments = type.typeArguments;
+    // The parameter is a Interface with a Type Argument that is not yet
+    // generated. In this case analyzer would set its type to InvalidType
+    //
+    // For example for:
+    // List<ToBeGenerated> values,
+    //
+    // it would generate:  List<InvalidType>
+    // instead of          List<dynamic>
+    //
+    // This a regression in analyzer 5.13.0
+    if (typeArguments.any((e) => e is InvalidType)) {
+      final dynamicType = element.library2.typeProvider.dynamicType;
+      typeArguments.replaceWhere((t) => t is InvalidType, dynamicType);
+    }
+    displayType = buildType(element.name3!, typeArguments);
+    libraryId = element.library2.id;
+  } else {
+    displayType = type.getDisplayString();
+    libraryId = null;
+  }
+
   final owner = originLibrary.firstFragment.prefixes.firstWhereOrNull((e) {
     return e.imports.any((l) {
       return l.importedLibrary2!.anyTransitiveExport((library) {
-        return library.id == _getElementForType(type)?.library2?.id;
+        return library.id == libraryId;
       });
     });
   });
-
-  String? displayType = type.getDisplayString();
-
-  // The parameter is a typedef in the form of
-  // SomeTypedef typedef
-  //
-  // In this case the analyzer would expand that typedef using getDisplayString
-  // For example for:
-  //
-  // typedef SomeTypedef = Function(String);
-  //
-  // it would generate:
-  // 'dynamic Function(String)'
-  //
-  // Instead of 'SomeTypedef'
-  if (type is FunctionType && type.alias?.element2 != null) {
-    displayType = type.alias!.element2.name3!;
-    if (type.alias!.typeArguments.isNotEmpty) {
-      displayType += '<${type.alias!.typeArguments.join(', ')}>';
-    }
-    if (type.nullabilitySuffix == NullabilitySuffix.question) {
-      displayType += '?';
-    }
-  }
-
-  // The parameter is a Interface with a Type Argument that is not yet generated
-  // In this case analyzer would set its type to InvalidType
-  //
-  // For example for:
-  // List<ToBeGenerated> values,
-  //
-  // it would generate:  List<InvalidType>
-  // instead of          List<dynamic>
-  //
-  // This a regression in analyzer 5.13.0
-  if (type is InterfaceType &&
-      type.typeArguments.any((e) => e is InvalidType)) {
-    final dynamicType = type.element3.library2.typeProvider.dynamicType;
-    var modified = type;
-    modified.typeArguments..replaceWhere((t) => t is InvalidType, dynamicType);
-    displayType = modified.getDisplayString();
-  }
 
   if (owner != null) {
     return '${owner.name3}.$displayType';
